@@ -1,6 +1,6 @@
 {
   "name": "cmdo-socket-client",
-  "version": "3.0.0-rc7",
+  "version": "3.0.0-rc8",
   "description": "Simple WebSocket client solution for web.",
   "repository": "https://github.com/cmdo/toolkit.git",
   "author": "Christoffer Rødvik <dev@kodemon.net>",
@@ -14,8 +14,8 @@
   "module": "./esm/index.js",
   "types": "./types/index.d.ts",
   "cmdo": {
-		"type": "module"
-	},
+    "type": "module"
+  },
   "jest": {
     "globals": {
       "ts-jest": {
@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "debug": "4.3.2",
+    "eventemitter3": "^4.0.7",
     "nanoid": "3.1.25"
   },
   "devDependencies": {
