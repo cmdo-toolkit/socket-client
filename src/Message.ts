@@ -1,27 +1,4 @@
-import { nanoid } from "nanoid";
-
-/*
- |--------------------------------------------------------------------------------
- | Types
- |--------------------------------------------------------------------------------
- */
-
-//#region
-
-type MessagePromise = {
-  resolve: (value?: void | PromiseLike<void> | undefined) => void;
-  reject: (reason?: string) => void;
-};
-
-//#endregion
-
-/*
- |--------------------------------------------------------------------------------
- | Message
- |--------------------------------------------------------------------------------
- */
-
-//#region
+import type { MessagePromise } from "./Types";
 
 export class Message {
   public readonly uuid: string;
@@ -32,7 +9,7 @@ export class Message {
   public readonly reject: MessagePromise["reject"];
 
   constructor(type: string, data: Record<string, unknown> | undefined, promise: MessagePromise) {
-    this.uuid = nanoid(6);
+    this.uuid = uuid();
     this.type = type;
     this.data = data ?? {};
     this.resolve = promise.resolve;
@@ -60,4 +37,10 @@ export class Message {
   }
 }
 
-//#endregion
+function uuid(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0,
+      v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}

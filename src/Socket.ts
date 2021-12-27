@@ -1,46 +1,16 @@
 import { EventEmitter } from "eventemitter3";
 
-import { log } from "./Log";
 import { Message } from "./Message";
-import { Service, ServiceClass } from "./Service";
+import type { Debounce, Log, Service, Settings } from "./Types";
 
 const RECONNECT_INCREMENT = 1250; // 1.25 seconds
 const MAX_RECONNECT_DELAY = 1000 * 30; // 30 seconds
 const HEARTBEAT_INVERVAL = 1000 * 10; // 10 seconds
 
-/*
- |--------------------------------------------------------------------------------
- | Types
- |--------------------------------------------------------------------------------
- */
-
-//#region
-
-type Settings = {
-  uri: string;
-  services?: {
-    [key: string]: ServiceClass;
-  };
-};
-
-type Debounce = {
-  reconnect: NodeJS.Timeout | undefined;
-  heartbeat: NodeJS.Timeout | undefined;
-};
-
-//#endregion
-
-/*
- |--------------------------------------------------------------------------------
- | Socket
- |--------------------------------------------------------------------------------
- */
-
-//#region
-
 export class Socket extends EventEmitter {
   public readonly uri: string;
   public readonly services: Service[] = [];
+  public readonly log?: Log;
 
   public messages: Message[] = [];
 
@@ -51,10 +21,11 @@ export class Socket extends EventEmitter {
     heartbeat: undefined
   };
 
-  constructor({ uri, services = {} }: Settings) {
+  constructor({ uri, log, services = {} }: Settings) {
     super();
 
     this.uri = uri;
+    this.log = log;
 
     for (const key in services) {
       const instance = services[key].create(this);
@@ -64,7 +35,7 @@ export class Socket extends EventEmitter {
 
     this.connect = this.connect.bind(this);
     this.ping = this.ping.bind(this);
-    this.post = this.post.bind(this);
+    this.send = this.send.bind(this);
     this.onOpen = this.onOpen.bind(this);
     this.onError = this.onError.bind(this);
     this.onMessage = this.onMessage.bind(this);
@@ -77,13 +48,9 @@ export class Socket extends EventEmitter {
    |--------------------------------------------------------------------------------
    */
 
-  //#region
-
   public get isConnected() {
     return this._ws?.readyState === WebSocket.OPEN;
   }
-
-  //#endregion
 
   /*
    |--------------------------------------------------------------------------------
@@ -91,10 +58,8 @@ export class Socket extends EventEmitter {
    |--------------------------------------------------------------------------------
    */
 
-  //#region
-
   public async connect() {
-    log.socket("connecting...");
+    this.log?.("socket", "connecting...");
     return new Promise<void>((resolve) => {
       this._ws = new WebSocket(this.uri);
 
@@ -114,35 +79,27 @@ export class Socket extends EventEmitter {
     return this;
   }
 
-  //#endregion
-
   /*
    |--------------------------------------------------------------------------------
    | Heartbeat
    |--------------------------------------------------------------------------------
    */
 
-  //#region
-
   public ping() {
     const heartbeat = this._debounce.heartbeat;
     if (heartbeat) {
       clearTimeout(heartbeat);
     }
-    this.post("ping").finally(() => {
+    this.send("ping").finally(() => {
       this._debounce.heartbeat = setTimeout(this.ping, HEARTBEAT_INVERVAL);
     });
   }
-
-  //#endregion
 
   /*
    |--------------------------------------------------------------------------------
    | Listeners
    |--------------------------------------------------------------------------------
    */
-
-  //#region
 
   public onConnect(resolve: () => void): () => Promise<void> {
     return async () => {
@@ -157,30 +114,30 @@ export class Socket extends EventEmitter {
   }
 
   public onOpen() {
-    log.socket("connected");
+    this.log?.("socket", "connected");
     this.emit("connected");
   }
 
   public onError(ev: Event) {
-    log.error("%O", ev);
+    this.log?.("error", JSON.stringify(ev));
   }
 
   public onMessage(msg: MessageEvent<string>) {
     const { uuid, type, data } = JSON.parse(msg.data);
     if (uuid) {
       if (data.data?.pong) {
-        log.heartbeat("[%s] received", uuid);
+        this.log?.("heartbeat", `[${uuid}] received`);
       } else {
-        log.response("[%s] %O", uuid, data.data);
+        this.log?.("response", uuid, data.data);
       }
     } else {
-      log.message("[%s] %O", type, data);
+      this.log?.("message", type, data);
     }
     this.emit(uuid ?? type, data);
   }
 
   public onClose(ev: CloseEvent) {
-    log.socket("closed");
+    this.log?.("socket", "closed");
 
     const heartbeat = this._debounce.heartbeat;
     if (heartbeat) {
@@ -195,13 +152,11 @@ export class Socket extends EventEmitter {
         this.connect,
         this._reconnectDelay < MAX_RECONNECT_DELAY ? (this._reconnectDelay += RECONNECT_INCREMENT) : MAX_RECONNECT_DELAY
       );
-      log.socket("reconnecting...");
+      this.log?.("socket", "reconnecting...");
     }
 
     this.emit("disconnected");
   }
-
-  //#endregion
 
   /*
    |--------------------------------------------------------------------------------
@@ -209,9 +164,7 @@ export class Socket extends EventEmitter {
    |--------------------------------------------------------------------------------
    */
 
-  //#region
-
-  public async post<T extends Record<string, any>>(type: string, data?: T): Promise<any> {
+  public async send<T extends Record<string, any>>(type: string, data?: T): Promise<any> {
     return new Promise((resolve, reject) => {
       this.messages.push(new Message(type, data, { resolve, reject }));
       this.process();
@@ -226,9 +179,9 @@ export class Socket extends EventEmitter {
     if (message) {
       if (this._ws) {
         if (message.type === "ping") {
-          log.heartbeat("[%s] sent", message.uuid);
+          this.log?.("heartbeat", `[${message.uuid}] sent`);
         } else {
-          log.outgoing("[%s] %s %O", message.uuid, message.type, message.data);
+          this.log?.("outgoing", `[${message.uuid}] ${message.type}`, message.data);
         }
         this._ws.send(message.toString());
       }
@@ -238,7 +191,7 @@ export class Socket extends EventEmitter {
             message.reject(res.message);
             break;
           }
-          case "responded": {
+          case "resolved": {
             message.resolve(res.data);
             break;
           }
@@ -247,8 +200,4 @@ export class Socket extends EventEmitter {
       this.process();
     }
   }
-
-  //#endregion
 }
-
-//#endregion
